@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type FormEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type FormEvent, type ReactNode } from 'react'
 import { InfoIcon, QUESTION_CHIP, TurnView } from '../components/AnswerView.tsx'
 import { ComposerBillButton } from '../components/ComposerBillButton.tsx'
 import { OpeningFold } from '../components/OpeningFold.tsx'
@@ -23,6 +23,11 @@ import { VoiceSession, type VoiceEnd } from '../lib/voiceSession.ts'
 
 /** How long the toast stays after voice mode closed by itself. */
 const VOICE_TOAST_MS = 6000
+/** The composer's text field: one line is 44 px (24 px text + 2 x 10 px), it grows to five lines, then scrolls inside. */
+const LINE_PX = 24
+const FIELD_PAD_PX = 20
+const ONE_LINE_PX = LINE_PX + FIELD_PAD_PX
+const MAX_FIELD_PX = LINE_PX * 5 + FIELD_PAD_PX
 
 interface Props {
   chat: ChatSession
@@ -63,7 +68,10 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
   const [cut, setCut] = useState(false)
   // While the mic records or sends, its bar takes the whole composer row (#751).
   const [voice, setVoice] = useState(false)
-  const input = useRef<HTMLInputElement>(null)
+  const input = useRef<HTMLTextAreaElement>(null)
+  // An invisible twin of the field: its scroll height is the height the text needs, so the field can ease to it.
+  const mirror = useRef<HTMLTextAreaElement>(null)
+  const [fieldPx, setFieldPx] = useState(ONE_LINE_PX)
   const composer = useRef<HTMLFormElement>(null)
   const sendButton = useRef<HTMLButtonElement>(null)
   const left = MAX_QUESTION - draft.length
@@ -112,7 +120,7 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
   }, [voiceToast])
 
   /** A paste that would go over 500 characters is cut to fit, at a word break when one is near. */
-  const paste = (event: ClipboardEvent<HTMLInputElement>) => {
+  const paste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
     const field = event.currentTarget
     const fitted = fitPaste(draft, field.selectionStart ?? draft.length, field.selectionEnd ?? draft.length, event.clipboardData.getData('text'))
     if (!fitted) return
@@ -121,6 +129,23 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
     setCut(true)
     requestAnimationFrame(() => field.setSelectionRange(fitted.caret, fitted.caret))
   }
+
+  // The field grows with the text, line by line, up to five lines (Renat: like ChatGPT), and shrinks back after
+  // sending; the height eases (no motion when reduced). Measured on the twin, so the change can transition.
+  useLayoutEffect(() => {
+    const measure = () => {
+      const field = input.current
+      const twin = mirror.current
+      if (!field || !twin) return
+      twin.style.width = `${field.clientWidth}px`
+      twin.value = draft || ' '
+      setFieldPx(Math.min(Math.max(twin.scrollHeight, ONE_LINE_PX), MAX_FIELD_PX))
+    }
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [draft])
+  const multiLine = fieldPx > ONE_LINE_PX
 
   // Send `?q=` once, then drop it, so Back or a reload does not ask again. The timeout is
   // cleared if the effect is torn down first (React's strict mode runs effects twice).
@@ -251,28 +276,39 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
         <p role="status" className="sr-only">
           {cut ? s.cut : ''}
         </p>
-        <div className={voice ? 'hidden' : 'contents'}>
-          <ComposerBillButton />
-        </div>
-        {/* Not positioned, so the mic's status line still sits above the whole composer. */}
+        {/* One rounded container (Renat: like ChatGPT): the paperclip, the text, the mic and the round send / voice
+            button inside it, all bottom-aligned while the text grows. The radius eases from a pill to 20 px once the
+            text takes more than one line. While the mic records, its bar takes the whole row (#751). */}
         <div
           className={
             voice
               ? 'flex min-w-0 flex-1 items-center'
-              : // The focus ring goes around the whole pill, mic included, not just the typing area.
-                'flex h-12 min-w-0 flex-1 items-center rounded-pill border border-line-strong bg-surface pr-px has-[input:focus-visible]:[outline:var(--focus-ring-width)_solid_var(--color-brand)] has-[input:focus-visible]:outline-offset-2'
+              : `relative flex min-w-0 flex-1 items-end gap-[2px] border border-line-strong bg-surface p-[3px] transition-[border-radius] duration-(--duration-fast) motion-reduce:transition-none has-[textarea:focus-visible]:[outline:var(--focus-ring-width)_solid_var(--color-brand)] has-[textarea:focus-visible]:outline-offset-2 ${
+                  multiLine ? 'rounded-[20px]' : 'rounded-[26px]'
+                }`
           }
         >
+          <div className={voice ? 'hidden' : 'contents'}>
+            <ComposerBillButton />
+          </div>
           <label htmlFor="chat-input" className="sr-only">
             {s.inputLabel}
           </label>
-          <input
+          <textarea
             id="chat-input"
             ref={input}
+            rows={1}
             value={draft}
             onChange={(event) => {
               setDraft(event.target.value)
               setCut(false)
+            }}
+            onKeyDown={(event) => {
+              // Enter sends (also the touch keyboard's send key); Shift+Enter makes a new line.
+              if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                event.preventDefault()
+                composer.current?.requestSubmit()
+              }
             }}
             onPaste={paste}
             aria-describedby={note ? 'chat-input-note' : undefined}
@@ -280,7 +316,17 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
             placeholder={s.placeholder}
             enterKeyHint="send"
             autoComplete="off"
-            className={`${voice ? 'hidden' : ''} h-full min-w-0 flex-1 rounded-pill bg-transparent outline-none pr-1 pl-[min(1.25rem,20px)] text-base text-ellipsis text-ink-2 placeholder:text-muted last:pr-[min(1.25rem,20px)]`}
+            style={{ height: fieldPx, overflowY: fieldPx >= MAX_FIELD_PX ? 'auto' : 'hidden' }}
+            className={`${voice ? 'hidden' : ''} min-w-0 flex-1 resize-none bg-transparent px-[8px] py-[10px] text-base leading-6 text-ink-2 outline-none placeholder:text-muted transition-[height] duration-(--duration-fast) motion-reduce:transition-none`}
+          />
+          {/* The twin that measures the text's height: same width, font and padding, never seen or read. */}
+          <textarea
+            ref={mirror}
+            aria-hidden="true"
+            tabIndex={-1}
+            readOnly
+            rows={1}
+            className="pointer-events-none invisible absolute top-0 left-0 -z-10 h-0 resize-none overflow-hidden px-[8px] py-[10px] text-base leading-6"
           />
           <ComposerMicButton
             onText={(text) => {
@@ -289,34 +335,34 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
             }}
             onActive={setVoice}
           />
+          {voice ? null : busy ? (
+            <button
+              type="button"
+              onClick={stop}
+              aria-label={s.stop}
+              className="inline-flex size-[44px] shrink-0 items-center justify-center rounded-pill bg-deep text-on-deep focus-visible:outline-mint"
+            >
+              <span aria-hidden="true" className="size-[16px] rounded-[3px] bg-on-deep" />
+            </button>
+          ) : (
+            // With an empty input (and voice mode available) the same round button opens voice mode: a wave
+            // in place of the arrow, the two icons cross-fading as text comes and goes (#811).
+            <button
+              ref={sendButton}
+              type={talk ? 'button' : 'submit'}
+              onClick={talk ? openVoice : undefined}
+              aria-label={talk ? vs.start : s.send}
+              className="relative inline-flex size-[44px] shrink-0 items-center justify-center rounded-pill bg-deep text-on-deep focus-visible:outline-mint"
+            >
+              <SendIcon shown={!talk}>
+                <path d="M12 19V5M5.5 11.5L12 5l6.5 6.5" strokeLinecap="round" strokeLinejoin="round" />
+              </SendIcon>
+              <SendIcon shown={talk}>
+                <path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4" strokeLinecap="round" />
+              </SendIcon>
+            </button>
+          )}
         </div>
-        {voice ? null : busy ? (
-          <button
-            type="button"
-            onClick={stop}
-            aria-label={s.stop}
-            className="inline-flex size-[48px] shrink-0 items-center justify-center rounded-pill bg-deep text-on-deep focus-visible:outline-mint"
-          >
-            <span aria-hidden="true" className="size-[16px] rounded-[3px] bg-on-deep" />
-          </button>
-        ) : (
-          // With an empty input (and voice mode available) the same round button opens voice mode: a wave
-          // in place of the arrow, the two icons cross-fading as text comes and goes (#811).
-          <button
-            ref={sendButton}
-            type={talk ? 'button' : 'submit'}
-            onClick={talk ? openVoice : undefined}
-            aria-label={talk ? vs.start : s.send}
-            className="relative inline-flex size-[48px] shrink-0 items-center justify-center rounded-pill bg-deep text-on-deep focus-visible:outline-mint"
-          >
-            <SendIcon shown={!talk}>
-              <path d="M12 19V5M5.5 11.5L12 5l6.5 6.5" strokeLinecap="round" strokeLinejoin="round" />
-            </SendIcon>
-            <SendIcon shown={talk}>
-              <path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4" strokeLinecap="round" />
-            </SendIcon>
-          </button>
-        )}
       </form>
       {voiceSession && <VoiceMode session={voiceSession} turns={turns} />}
       {voiceToast && !voiceSession && <Toast text={voiceToast} numbers={{}} onClose={() => setVoiceToast(null)} />}

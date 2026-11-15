@@ -43,7 +43,7 @@ describe('the send button with an empty input (#811)', () => {
 
   it('opens voice mode in a live build with a microphone API: a plain button with the wave shown, the arrow faded', async () => {
     const en = await renderChat(true, true)
-    expect(en).toMatch(/<button type="button" aria-label="Start voice mode" class="[^"]*size-\[48px\]/)
+    expect(en).toMatch(/<button type="button" aria-label="Start voice mode" class="[^"]*size-\[44px\]/)
     expect(en).not.toContain('aria-label="Send"')
     // Both icons are there for the cross-fade; the arrow is the hidden one, without motion when reduced.
     expect(en.match(/scale-50 opacity-0/g)).toHaveLength(1)
