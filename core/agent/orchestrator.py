@@ -52,7 +52,7 @@ from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
 from core.agent.registry import CONTROL, CallRejected, Registry
 from core.agent.rules import HEALTH as RULE_HEALTH
-from core.agent.rules import WHAT_IF_MORE_OPTIONS, WHAT_IF_WHICH_OPTIONS
+from core.agent.rules import WHAT_IF_MORE_OPTIONS, WHAT_IF_WHICH_OPTIONS, what_if_which_question
 from core.agent.rules import RuleModel, goodbye_greeting, human_request, meta_intent, unknown_object
 from core.agent.validator import (TOKEN, Allowed, AnswerDraft, allowed_from, check_text, contents_claim, draft_problems,
                                   plain_text, render, repeated_period, unavailable_claim, validate)
@@ -1146,7 +1146,8 @@ class Pipeline:
         """The what-if question back's chips follow the customer's data (#888): a chip is offered only when the
         what-if tool gives this customer an estimate for it (the tool's own check: enough purchases in the last six
         complete months and a saving above zero), and the next candidate takes a dropped chip's place, so "What if
-        I took fewer taxis?" never leads to "too few transactions". Any other question back, or any error, keeps its
+        I took fewer taxis?" never leads to "too few transactions". The question's examples are the offered chips, so
+        its text never names a category the chips leave out. Any other question back, or any error, keeps its text and
         chips as they are."""
         i = 1 if lang == "fi" else 0
         defaults = list(WHAT_IF_WHICH_OPTIONS[i])
@@ -1164,7 +1165,7 @@ class Pipeline:
         except Exception as exc:  # noqa: BLE001 - the chips as they were, never a failed answer
             log.warning("what-if chips not checked (%s)", type(exc).__name__)
             return clarify
-        return SimpleNamespace(question=clarify.question, options=keep)
+        return SimpleNamespace(question=what_if_which_question(keep, lang), options=keep)
 
     def _what_if_estimates(self, probe: ToolContext, option: str, lang: str) -> bool:
         """Whether the chip, sent with a cut, is a what-if the tool estimates for this customer."""
