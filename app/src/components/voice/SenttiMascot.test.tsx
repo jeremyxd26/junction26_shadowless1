@@ -58,6 +58,25 @@ describe('SenttiMascot (#798)', () => {
     expect(render('idle', 'en', 96)).toContain('width="96" height="96"')
   })
 
+  it('getLevel (#893) changes nothing in the markup: the mouth starts shut and only the browser loop polls it', () => {
+    let calls = 0
+    const getLevel = () => {
+      calls++
+      return 1
+    }
+    const html = renderToStaticMarkup(createElement(SenttiMascot, { state: 'speaking', lang: 'en', getLevel }))
+    expect(html).toBe(renderToStaticMarkup(createElement(SenttiMascot, { state: 'speaking', lang: 'en' })))
+    expect(calls).toBe(0)
+  })
+
+  it('stateText={false} (#893) leaves out the reduced-motion text, for a parent whose caption says it', () => {
+    for (const state of MASCOT_STATES) {
+      const html = renderToStaticMarkup(createElement(SenttiMascot, { state, lang: 'fi', stateText: false }))
+      expect(html).not.toMatch(/<p[\s>]/)
+      expect(html).toContain(`data-state="${state}"`)
+    }
+  })
+
   it('under reduced motion the state shows as text, in EN and FI; idle and celebrate have none', () => {
     const text = (state: MascotState, lang: 'en' | 'fi') => /<p ([^>]*)>([^<]*)<\/p>/.exec(render(state, lang))
     expect(text('listening', 'en')?.[2]).toBe('Listening…')
